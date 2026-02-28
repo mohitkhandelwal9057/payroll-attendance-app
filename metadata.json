@@ -1,0 +1,7 @@
+{
+  "name": "PayWorks - Payroll & Attendance",
+  "description": "A production-ready payroll and attendance management system with employer and employee dashboards, geo-fenced attendance, and salary calculation.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
