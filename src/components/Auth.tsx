@@ -20,7 +20,7 @@ export default function Auth({ onLogin }: AuthProps) {
   const [successMessage, setSuccessMessage] = useState('');
 
   useEffect(() => {
-    fetch('/api/auth/employer-exists')
+    fetch('https://adsar-payroll.onrender.com/api/auth/employer-exists')
       .then(res => res.json())
       .then(data => setEmployerExists(data.exists));
   }, []);
@@ -32,7 +32,7 @@ export default function Auth({ onLogin }: AuthProps) {
     try {
       // If logging in, we might want to check if user exists first
       // but for now we follow the user's requested flow: Mobile -> OTP
-      const res = await fetch('/api/auth/send-otp', {
+      const res = await fetch('https://adsar-payroll.onrender.com/api/auth/send-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ mobile, authMode, role }),
@@ -65,7 +65,7 @@ export default function Auth({ onLogin }: AuthProps) {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch('/api/auth/verify-otp', {
+      const res = await fetch('https://adsar-payroll.onrender.com/api/auth/verify-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
