@@ -2,101 +2,115 @@ import express from "express";
 import mongoose from "mongoose";
 import cors from "cors";
 import dotenv from "dotenv";
-import PDFDocument from "pdfkit";
 
 dotenv.config();
 
 const app = express();
-
-// --- 1. CORS FIX (Sabse Jaruri) ---
-app.use(cors({
-  origin: '*',
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
-
+app.use(cors({ origin: '*' }));
 app.use(express.json());
 
-// --- 2. MONGODB CONNECTION ---
+// --- MongoDB Connection ---
 const mongoURI = process.env.MONGODB_URI || "";
 mongoose.connect(mongoURI)
-  .then(() => console.log("[DB] Connected to MongoDB"))
-  .catch(err => console.error("[DB] Connection Error:", err));
+  .then(() => console.log("MongoDB Connected Successfully"))
+  .catch(err => console.error("MongoDB Connection Error:", err));
 
-// --- 3. SCHEMAS ---
-const userSchema = new mongoose.Schema({
+// --- Schemas ---
+const User = mongoose.model('User', new mongoose.Schema({
   name: String,
   mobile: { type: String, unique: true },
-  role: { type: String, enum: ['employer', 'employee', 'admin'] },
-  employee_id: String,
-  base_salary: { type: Number, default: 0 }
+  role: { type: String, enum: ['employer', 'employee'] },
+  employee_id: String
+}));
+
+// OTP को स्टोर करने के लिए Schema (यह 5 मिनट बाद खुद डिलीट हो जाएगा)
+const OtpSchema = new mongoose.Schema({
+  mobile: { type: String, required: true },
+  otp: { type: String, required: true },
+  createdAt: { type: Date, default: Date.now, index: { expires: '5m' } } 
 });
-const User = mongoose.models.User || mongoose.model('User', userSchema);
+const Otp = mongoose.model('Otp', OtpSchema);
 
-const otpSchema = new mongoose.Schema({
-  mobile: String,
-  otp: String,
-  expires_at: Date
-});
-const Otp = mongoose.models.Otp || mongoose.model('Otp', otpSchema);
+// --- API Routes ---
 
-// --- 4. API ROUTES ---
-
-// Test Route
+// 1. Test Route
 app.get("/api/test", (req, res) => {
-  res.json({ message: "Server is working perfectly!" });
+  res.json({ status: "Success", message: "Server is Running with Random OTP System!" });
 });
 
-// Check Employer Route
+// 2. Check if Employer Exists
 app.get("/api/auth/employer-exists", async (req, res) => {
   try {
     const employer = await User.findOne({ role: 'employer' });
     res.json({ exists: !!employer });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+  } catch (err) {
+    res.status(500).json({ error: "Server Error" });
   }
 });
 
-// Send OTP Route (FIXED OTP: 123456)
+// 3. Send Random OTP
 app.post("/api/auth/send-otp", async (req, res) => {
   try {
     const { mobile } = req.body;
-    const otp = "123456"; // Testing ke liye fix kar diya hai
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+    // 6-digit Random OTP जनरेट करें
+    const generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
     
-    await Otp.findOneAndUpdate({ mobile }, { otp, expires_at: expiresAt }, { upsert: true });
-    res.json({ success: true, message: "OTP sent (Use 123456)" });
-  } catch (err: any) {
-    res.status(500).json({ success: false, message: err.message });
+    // पुराने OTP को डिलीट करें और नया सेव करें
+    await Otp.findOneAndDelete({ mobile });
+    const newOtp = new Otp({ mobile, otp: generatedOtp });
+    await newOtp.save();
+
+    // अभी हम Console में OTP दिखा रहे हैं (जब तक आप SMS API न जोड़ें)
+    console.log(`[SMS-Simulator] OTP for ${mobile} is: ${generatedOtp}`);
+    
+    res.json({ 
+      success: true, 
+      message: "OTP generated successfully!",
+      debugOtp: generatedOtp // टेस्टिंग के लिए यहाँ भेज रहे हैं, बाद में इसे हटा सकते हैं
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: "Error sending OTP" });
   }
 });
 
-// Verify OTP Route
+// 4. Verify OTP & Login/Register
 app.post("/api/auth/verify-otp", async (req, res) => {
   try {
     const { mobile, otp, name, role, authMode } = req.body;
-    const otpRecord = await Otp.findOne({ mobile, otp });
 
+    // डेटाबेस में OTP चेक करें
+    const otpRecord = await Otp.findOne({ mobile, otp });
     if (!otpRecord) {
-      return res.status(400).json({ success: false, message: "Invalid OTP" });
+      return res.status(400).json({ success: false, message: "Invalid or Expired OTP" });
     }
 
+    // OTP सही होने पर उसे डिलीट कर दें
+    await Otp.deleteOne({ _id: otpRecord._id });
+
     let user = await User.findOne({ mobile });
+
     if (authMode === 'register' && !user) {
-      user = new User({ name, mobile, role, employee_id: `EMP${Date.now().toString().slice(-4)}` });
+      user = new User({ 
+        name, 
+        mobile, 
+        role, 
+        employee_id: "EMP" + Math.floor(1000 + Math.random() * 9000) 
+      });
       await user.save();
-    } else if (!user) {
-      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found. Please register." });
     }
 
     res.json({ success: true, user });
-  } catch (err: any) {
-    res.status(500).json({ success: false, message: err.message });
+  } catch (err) {
+    res.status(500).json({ success: false, message: "Verification Error" });
   }
 });
 
-// --- 5. SERVER START ---
-const PORT = Number(process.env.PORT) || 10000;
+// --- Server Start ---
+const PORT = process.env.PORT || 10000;
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Server started on port ${PORT}`);
+  console.log(`Server Live on Port ${PORT}`);
 });
