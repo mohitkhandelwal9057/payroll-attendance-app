@@ -15,71 +15,88 @@ mongoose.connect(mongoURI)
   .then(() => console.log("[DB] Successfully connected to MongoDB Atlas"))
   .catch(err => console.error("[DB] Connection Error:", err));
 
-// --- SCHEMAS (Database Structure) ---
-const userSchema = new mongoose.Schema({
-  name: String,
-  mobile: { type: String, unique: true },
-  role: { type: String, enum: ['employer', 'employee', 'admin'] },
-  employee_id: String,
-  paid_leaves: { type: Number, default: 12 },
-  sick_leaves: { type: Number, default: 6 },
-  casual_leaves: { type: Number, default: 6 }
-});
-const User = mongoose.model('User', userSchema);
+// --- SCHEMAS ---
+const User = mongoose.model('User', new mongoose.Schema({
+  name: String, mobile: { type: String, unique: true }, role: String,
+  employee_id: String, paid_leaves: { type: Number, default: 12 },
+  sick_leaves: { type: Number, default: 6 }, casual_leaves: { type: Number, default: 6 }
+}));
 
-const attendanceSchema = new mongoose.Schema({
+const Attendance = mongoose.model('Attendance', new mongoose.Schema({
   user_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-  date: String,
-  punch_in_time: String,
-  punch_out_time: String,
-  total_hours: Number,
-  status: String
-});
-const Attendance = mongoose.model('Attendance', attendanceSchema);
+  date: String, punch_in_time: String, punch_out_time: String,
+  total_hours: Number, status: String, lat: Number, lng: Number
+}));
 
-const otpSchema = new mongoose.Schema({
-  mobile: String,
-  otp: String,
-  expires_at: Date
-});
-const Otp = mongoose.model('Otp', otpSchema);
+const Leave = mongoose.model('Leave', new mongoose.Schema({
+  user_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  type: String, start_date: String, end_date: String,
+  reason: String, status: { type: String, default: 'Pending' }
+}));
+
+const Otp = mongoose.model('Otp', new mongoose.Schema({
+  mobile: String, otp: String, expires_at: Date
+}));
 
 // --- API ROUTES ---
 
 // 1. Test Route
-app.get("/api/test", (req, res) => {
-  res.json({ message: "Server is alive with MongoDB" });
-});
+app.get("/api/test", (req, res) => res.json({ message: "Server is alive with MongoDB" }));
 
-// 2. Auth: Check Employer
-app.get("/api/auth/employer-exists", async (req, res) => {
-  const employer = await User.findOne({ role: 'employer' });
-  res.json({ exists: !!employer });
-});
-
-// 3. Auth: Send OTP
+// 2. Auth: OTP & Login
 app.post("/api/auth/send-otp", async (req, res) => {
-  try {
-    const { mobile } = req.body;
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
-    
-    await Otp.findOneAndUpdate({ mobile }, { otp, expires_at: expiresAt }, { upsert: true });
-    console.log(`[OTP] For ${mobile}: ${otp}`);
-    res.json({ success: true, message: `OTP sent: ${otp}` });
-  } catch (err: any) {
-    res.status(500).json({ success: false, message: err.message });
-  }
+  const { mobile } = req.body;
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  await Otp.findOneAndUpdate({ mobile }, { otp, expires_at: new Date(Date.now() + 5*60000) }, { upsert: true });
+  console.log(`[OTP] ${mobile}: ${otp}`);
+  res.json({ success: true, otp }); // Production में सिर्फ success भेजें
 });
 
-// 4. Employees: List
-app.get("/api/employees", async (req, res) => {
-  const employees = await User.find({ role: 'employee' });
-  res.json(employees);
+// 3. Attendance: Punch-In
+app.post("/api/attendance/punch-in", async (req, res) => {
+  const { userId, lat, lng } = req.body;
+  const date = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+  const time = new Date().toLocaleTimeString('en-GB', { hour12: false, timeZone: 'Asia/Kolkata' });
+
+  const newRecord = new Attendance({ user_id: userId, date, punch_in_time: time, status: 'Present', lat, lng });
+  await newRecord.save();
+  res.json({ success: true });
 });
 
-// Port for Render
+// 4. Attendance: Punch-Out
+app.post("/api/attendance/punch-out", async (req, res) => {
+  const { userId } = req.body;
+  const date = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+  const time = new Date().toLocaleTimeString('en-GB', { hour12: false, timeZone: 'Asia/Kolkata' });
+
+  const record = await Attendance.findOne({ user_id: userId, date });
+  if (!record) return res.status(400).json({ message: "No punch-in found" });
+
+  record.punch_out_time = time;
+  // Calculate hours (simple version)
+  const start = new Date(`${date}T${record.punch_in_time}`);
+  const end = new Date(`${date}T${time}`);
+  record.total_hours = Number(((end.getTime() - start.getTime()) / 3600000).toFixed(2));
+  
+  await record.save();
+  res.json({ success: true });
+});
+
+// 5. Leaves: Apply
+app.post("/api/leaves", async (req, res) => {
+  const newLeave = new Leave(req.body);
+  await newLeave.save();
+  res.json({ success: true });
+});
+
+// 6. Leaves: List (For Admin/Employer)
+app.get("/api/leaves", async (req, res) => {
+  const leaves = await Leave.find().populate('user_id', 'name');
+  res.json(leaves);
+});
+
+// Server Start
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`Server is running on port ${PORT}`);
 });
