@@ -169,9 +169,10 @@ app.get("/api/reports/salary-slip/:userId", async (req, res) => {
   } catch (err: any) { res.status(500).send(err.message); }
 });
 
-// Server Start (Final Render Fix)
-const PORT = Number(process.env.PORT) || 10000;
+// Server Start (This exact code fixes the TS2769 error)
+const PORT: number = Number(process.env.PORT) || 10000;
 
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`[Server] Live on port ${PORT}`);
+  console.log(`[DB] Full Payroll System with PDF is Live`);
+  console.log(`Server is running on port ${PORT}`);
 });
