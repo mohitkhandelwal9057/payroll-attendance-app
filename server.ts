@@ -169,8 +169,9 @@ app.get("/api/reports/salary-slip/:userId", async (req, res) => {
   } catch (err: any) { res.status(500).send(err.message); }
 });
 
-// Server Start
-const PORT = process.env.PORT || 3000;
+// Server Start (Render Fix)
+const PORT: number = parseInt(process.env.PORT || "10000", 10);
+
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Server is running on port ${PORT}`);
+  console.log(`[Server] Full Payroll System with PDF is Live on port ${PORT}`);
 });
